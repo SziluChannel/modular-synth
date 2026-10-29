@@ -1,0 +1,24 @@
+* ota + opamp model parse test
+.param IC = 56.31u
+.param RES = 1
+Vin in 0 SIN(0 0.2 220)
+Rp1a in p1 47k
+Rp1b p1 0 470
+Rn1a v1b n1 47k
+Rn1b n1 0 470
+O1 p1 n1 cv v1 K35
+C1 v1 fb 2.2n
+O2 p2 n2 cv v2 K35
+Rp2a v1b p2 47k
+Rp2b p2 0 470
+Rn2a y n2 47k
+Rn2b n2 0 470
+C2 v2 0 2.2n
+Vcv cv 0 DC {IC}
+.model K35 OTA (IS=1e-14 VT=0.02585 VPOS=15 VNEG=-15 VDROPPOS=1.5 VDROPNEG=1.5)
+.op
+.control
+op
+print all
+.endc
+.end

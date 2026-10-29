@@ -1,0 +1,45 @@
+* Module 2: MS-20 style Resonant Sallen-Key LPF (VCF)
+* LM13700 OTA + TL072, diode-limited feedback
+
+VCC VCC 0 DC 12
+VEE VEE 0 DC -12
+
+* Input signal
+VIN IN 0 SIN(0 1 1000)
+
+* Cutoff CV (0-5V from envelope) attenuated
+VCV CV 0 DC 2.5
+
+* OTA transconductance: gm = Iabc/(2VT); model as VCCS controlled by CV
+* Use G device: I = gm*Vdiff, gm = 1mS per volt CV approx
+Gota1 X1 0 CV 0 1m
+* Sallen-Key: input resistor
+R1 IN N1 10k
+* OTA acts as resistor from N1 to ground? Simplify: use OTA output as current into node
+* Feedback capacitor
+C1 N1 0 10n
+R2 N1 N2 10k
+C2 N2 0 10n
+* Buffer
+Ebuf OUT 0 N2 0 1
+
+* Resonance feedback: output -> diode pair -> input node
+D1 OUT X1 1N4148
+RX1 X1 NR 100
+D2 NR X2 1N4148
+RX2 X2 OUT 100
+Rres NR N1 47k
+
+* Decoupling
+Cdec1 VCC 0 100n
+Cdec2 VEE 0 100n
+
+.model 1N4148 D(Is=2.52n Rs=10 N=1.752 Cjo=4p M=0.4 tt=20n)
+
+.control
+.options reltol=1e-3 abstol=1e-9 vntol=1e-6 method=gear
+tran 10u 50m uic
+wrdata /tmp/vcf_ms20.cir.csv time OUT
+print v(OUT)
+.endc
+.end

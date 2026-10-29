@@ -1,0 +1,159 @@
+* converted from full_synth.cir
+.include /home/szilu/Documents/synth/local/models.lib
+.options method=gear
+* =====================================================================
+*  FULL MODULAR SYNTH + GUITAR INTERFACE
+*  Flat Circuit Studio / circuit-runtime netlist (no .subckt / X).
+*
+*  VCF  : Korg-35 / early MS-20 Sallen-Key lowpass, two OTA-C VCR
+*         sections, bootstrapped C1, diode-limited resonance.
+*  VCOs : op-amp triangle cores (integrator + Schmitt trigger).
+*         The old switch-reset saw core forced the solver into
+*         sub-microsecond steps and could not run in realtime.
+*
+*  Everything here is a database-proven topology: 3 op-amps in the
+*  filter, 1 per oscillator beyond the integrator, no ideal switches.
+* =====================================================================
+* ---------------------------- KNOBS ---------------------------------
+.param VCO1_FREQ = 220
+.param VCO2_FREQ = 277.2
+.param VCO3_FREQ = 329.6
+.param LFO_FREQ  = 4
+.param VCF1_IABC = 56.31u      ; VCR bias -> cutoff (~750 Hz)
+.param VCF1_RES  = 0.5         ; 0..1, feedback gain K = 2.15*RES
+.param VCF1_CV   = -1e-5       ; cutoff CV, amps per volt of fcv
+.param EF1_GAIN  = 10
+.param MASTER    = 0.7
+* ---------------------------- MODELS --------------------------------
+.model D1N4148  D     (IS=2.52n N=1.752 RS=0.568)
+* ---------------------------- SOURCES -------------------------------
+Vin    in  0 AC 1 0 SIN(0 0.2 220)
+* =====================================================================
+*  GUITAR INPUT + ENVELOPE FOLLOWER
+*  One gain stage (x EF1_GAIN) doubles as the high-impedance input.
+* =====================================================================
+Cin  in   g1  100n
+Rhi  g1   0   1MEG
+Reg  gfb  0   10k
+Ref  gfb  gp  {10k*(EF1_GAIN-1)+1}
+XAp g1 gfb gp OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+Drec gp   dx  D1N4148
+Red  dx   env 1k
+Cen  env  0   1u
+Rdc  env  0   100k
+* =====================================================================
+*  VCO 1  -  triangle core,  f = 2.5 / (Rosc * 100n)
+* =====================================================================
+Rosc1  sq1  ni1  {2.5/(VCO1_FREQ*100n)}
+Cint1  vco1 ni1  100n IC=0.2
+XAint1 0 ni1 vco1 OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+Rsch1  vco1 px1  100k
+Rhy1   sq1  px1  1MEG
+XAsch1 px1 0 sq1 OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+Rld1   vco1 0    100k
+* =====================================================================
+*  VCO 2
+* =====================================================================
+Rosc2  sq2  ni2  {2.5/(VCO2_FREQ*100n)}
+Cint2  vco2 ni2  100n IC=0.2
+XAint2 0 ni2 vco2 OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+Rsch2  vco2 px2  100k
+Rhy2   sq2  px2  1MEG
+XAsch2 px2 0 sq2 OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+Rld2   vco2 0    100k
+* =====================================================================
+*  VCO 3
+* =====================================================================
+Rosc3  sq3  ni3  {2.5/(VCO3_FREQ*100n)}
+Cint3  vco3 ni3  100n IC=0.2
+XAint3 0 ni3 vco3 OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+Rsch3  vco3 px3  100k
+Rhy3   sq3  px3  1MEG
+XAsch3 px3 0 sq3 OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+Rld3   vco3 0    100k
+* =====================================================================
+*  LFO  -  same triangle core, bigger cap for slow rates
+*  f = 2.5 / (Rosc * 10u)
+* =====================================================================
+RoscL  sqL  niL  {2.5/(LFO_FREQ*10u)}
+CintL  lfo  niL  10u IC=0.2
+XAintL 0 niL lfo OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+RschL  lfo  pxL  100k
+RhyL   sqL  pxL  1MEG
+XAschL pxL 0 sqL OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+RldL   lfo  0    100k
+* =====================================================================
+*  MIXER  (guitar + 3 VCOs, passive sum into a buffer)
+*  Rmg sets the level: ~0.2 V peak at `mixout`, which is what the
+*  filter input attenuator (47k/470) expects.
+* =====================================================================
+Rm0 in   mixn 470k
+Rm1 vco1 mixn 470k
+Rm2 vco2 mixn 470k
+Rm3 vco3 mixn 470k
+Rmg mixn 0    33k
+XAm mixn mixout mixout OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+* =====================================================================
+*  VCF  -  Korg-35 Sallen-Key lowpass
+*
+*  Section 1: OTA VCR into C1, C1 foot on the feedback node k_fb
+*             (bootstrapped Sallen-Key cap).
+*  Section 2: OTA VCR with grounded C2.
+*  Feedback : output -> pot -> x2.15 stage -> k_fb; the gain resistor is
+*             shunted by anti-parallel 1N4148s, so resonance self-limits.
+*             Q = 1/(2 - K),  K = 2.15*RES.
+*  Cutoff   : k_cv is read by the OTA directly as a current in amperes,
+*             so it must stay an ideal source. Bias and CV are summed
+*             with an E source rather than resistors.
+* =====================================================================
+* --- section 1 -------------------------------------------------------
+Rp1a mixout k_p1  47k
+Rp1b k_p1   0     470
+Rn1a k_v1b  k_n1  47k
+Rn1b k_n1   0     470
+XO1 k_p1 k_n1 k_cv k_v1 OTA
+C1   k_v1   k_fb  2.2n
+XAb1 k_v1 k_v1b k_v1b OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+* --- section 2 -------------------------------------------------------
+Rp2a k_v1b  k_p2  47k
+Rp2b k_p2   0     470
+Rn2a k_vout k_n2  47k
+Rn2b k_n2   0     470
+XO2 k_p2 k_n2 k_cv k_v2 OTA
+C2   k_v2   0     2.2n
+XAb2 k_v2 k_vout k_vout OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+* --- resonance -------------------------------------------------------
+Rk_a k_vout k_kw  {47k*(1-VCF1_RES)+1}
+Rk_b k_kw   0     {47k*VCF1_RES+1}
+Rg   k_fn   0     10k
+Rf   k_fn   k_fb  11.5k
+D1   k_fb   k_fd  D1N4148
+D2   k_fd   k_fb  D1N4148
+Rd   k_fd   k_fn  3.3k
+XAfb k_kw k_fn k_fb OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+* --- cutoff bias + CV (ideal sum -> stiff node) -----------------------
+Vcv  k_cv0 0 DC {VCF1_IABC}
+Evcv k_cvs 0 fcv 0 {VCF1_CV}
+Esum k_cv  0 k_cv0 k_cvs 1
+* =====================================================================
+*  FILTER CV = envelope + LFO (passive sum)
+* =====================================================================
+Rf1 env fcv 100k
+Rf2 lfo fcv 100k
+Rf3 fcv 0   100k
+* =====================================================================
+*  OUTPUT  (DC block, master, line + headphone from one buffer)
+* =====================================================================
+Cdc k_vout o1 1u
+Rdc_out o1   0  100k
+Ro1 o1   w  {50k*(1-MASTER)+1}
+Ro2 w    0  {50k*MASTER+1}
+XAln w line line OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+Rhp line hpj  47
+Rh  hpj  0    32
+* ---------------------------- CONTROLS / OUTPUTS ---------------------
+.tran 20u 100m
+.control
+run
+.endc
+.end

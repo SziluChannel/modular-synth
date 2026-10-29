@@ -1,0 +1,178 @@
+* converted from fs_semi.cir
+.include /home/szilu/Documents/synth/local/models.lib
+.options method=gear
+* Modular Synth + Guitar Interface
+* Three saw-core VCOs into a mixer, through the Polivoks-style SVF and out the
+* output stage. The guitar input has its own preamp and envelope follower that
+* opens the filter as you play. The keyboard drives the VCO pitch bus.
+* ---------------------------- KNOBS ---------------------------------
+.param VCO1_FREQ = 220
+.param VCO2_FREQ = 277.2
+.param VCO3_FREQ = 329.6
+.param MIX1_L1 = 1
+.param MIX1_L2 = 1
+.param MIX1_L3 = 1
+.param MIX1_L4 = 0.05
+.param VCF_IC = 31u
+.param VCF_RES = 0.5
+.param VCF_DRIVE = 1
+.param VCF_CVAMT = 20u
+.param GTR_GAIN = 10
+.param MASTER = 0.7
+.param KEYBOARD1_PITCH = 0.0833
+.param KEYBOARD1_VEL = 3.94
+.param GATE = 0
+* ---------------------------- PATCH --------------------------------
+XKEYBOARD1 pitch gate vel trig KEYBOARD1
+XSRC in SRC
+XVCO1 pitch osc1 VCO1
+XVCO2 pitch osc2 VCO2
+XVCO3 pitch osc3 VCO3
+XGUITAR in gtr env GUITAR
+XMIX osc1 osc2 osc3 gtr mix MIXER
+XVCF mix env filt POLIVOKSVCF
+XOUT filt line hp OUT
+* ---------------------------- MODELS -------------------------------
+.model SW_VCO SW (Vt=2.5 Vh=2.0 Ron=3k Roff=1e12)
+.model D_EXPO D (IS=1e-14 N=1 RS=0)
+.model D1N4148 D (IS=2.52n N=1.752 RS=0.568)
+.model SW_CLAMP SW (Vt=0.05 Vh=0.01 Ron=10 Roff=1e12)
+* =====================================================================
+*  KEYBOARD - pitch / gate / velocity from the on-screen keys
+* =====================================================================
+.subckt KEYBOARD1 pitch_out gate_out vel_out trig_out
+*@module keyboard
+Vp pitch_out 0 DC {KEYBOARD1_PITCH}
+Vg gate_out  0 DC {5*GATE}
+Vv vel_out   0 DC {KEYBOARD1_VEL}
+Ct gate_out t 100n
+Rt t 0 20k
+St t 0 0 t SW_CLAMP
+Et trig_out 0 t 0 1
+.ends
+* =====================================================================
+*  SOURCE - guitar test signal
+* =====================================================================
+.subckt SRC in
+Vin in 0 AC 1 0 SIN(0 0.2 220)
+.ends
+* =====================================================================
+*  VCO 1 - saw core, exponential converter, soft reset switch
+* =====================================================================
+.subckt VCO1 pitch out
+Vb vo 0 DC {0.02585*ln(max(3.9984e-4*VCO1_FREQ, 1e-30)/1e-11)}
+Ep vd1 vo pitch 0 0.0179176
+Eh vd vd1 cv 0 0.0046468
+Dx vd vs D_EXPO
+En vn 0 0 vs 1e6
+Rf vs vn 1k
+Ec cv 0 0 vn 1
+G1 0 ramp cv 0 100u
+C1 ramp 0 10n
+S1 ramp 0 ramp 0 SW_VCO
+Vmid mid 0 DC 2.5
+E1 out 0 ramp mid 0.15
+.ends
+* =====================================================================
+*  VCO 2
+* =====================================================================
+.subckt VCO2 pitch out
+Vb vo 0 DC {0.02585*ln(max(3.9984e-4*VCO2_FREQ, 1e-30)/1e-11)}
+Ep vd1 vo pitch 0 0.0179176
+Eh vd vd1 cv 0 0.0046468
+Dx vd vs D_EXPO
+En vn 0 0 vs 1e6
+Rf vs vn 1k
+Ec cv 0 0 vn 1
+G1 0 ramp cv 0 100u
+C1 ramp 0 10n
+S1 ramp 0 ramp 0 SW_VCO
+Vmid mid 0 DC 2.5
+E1 out 0 ramp mid 0.15
+.ends
+* =====================================================================
+*  VCO 3
+* =====================================================================
+.subckt VCO3 pitch out
+Vb vo 0 DC {0.02585*ln(max(3.9984e-4*VCO3_FREQ, 1e-30)/1e-11)}
+Ep vd1 vo pitch 0 0.0179176
+Eh vd vd1 cv 0 0.0046468
+Dx vd vs D_EXPO
+En vn 0 0 vs 1e6
+Rf vs vn 1k
+Ec cv 0 0 vn 1
+G1 0 ramp cv 0 100u
+C1 ramp 0 10n
+S1 ramp 0 ramp 0 SW_VCO
+Vmid mid 0 DC 2.5
+E1 out 0 ramp mid 0.15
+.ends
+* =====================================================================
+*  GUITAR - Hi-Z preamp + envelope follower
+* =====================================================================
+.subckt GUITAR in gtr env
+Cin  in  g1  100n
+Rhi  g1  0   1MEG
+Reg  gfb 0   10k
+Ref  gfb gtr {10k*(GTR_GAIN-1)+1}
+XAp g1 gfb gtr OPA aol=200000 gbp=3e+06 rout=75 vsat=11 pole=15
+Drec gtr dx  D1N4148
+Red  dx  env 1k
+Cen  env 0   1u
+Rdc  env 0   100k
+.ends
+* =====================================================================
+*  MIXER - inverting summer, one level per input
+* =====================================================================
+.subckt MIXER in1 in2 in3 in4 out
+R1 in1 s {10k/(MIX1_L1+1m)}
+R2 in2 s {10k/(MIX1_L2+1m)}
+R3 in3 s {10k/(MIX1_L3+1m)}
+R4 in4 s {10k/(MIX1_L4+1m)}
+Rf s out 10k
+XA1 0 s out OPA aol=200000 gbp=3e+06 rout=75 vsat=11 pole=15
+.ends
+* =====================================================================
+*  POLIVOKS VCF - 2-pole OTA-C SVF, linear resonance
+*  The cutoff port is the envelope CV; the knob sets the DC bias.
+* =====================================================================
+.subckt POLIVOKSVCF in cutoff out
+R_in in sn {10k/VCF_DRIVE}
+R_lp lp sn 10k
+R_q  bp sn {6k+900k*VCF_RES*VCF_RES}
+R_f  sn hp 10k
+XAsum 0 sn hp OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+R1a hp i1 10k
+R1b i1 0 220
+XO1 i1 0 cv bpc OTA
+C1  bpc 0 2.2n
+XAb1 bpc bp bp OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+R2a bp i2 10k
+R2b i2 0 220
+XO2 i2 0 cv lpc OTA
+C2  lpc 0 2.2n
+XAb2 lpc lp lp OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+Bcv cv 0 V = max(1e-9, {VCF_IC} + {VCF_CVAMT}*V(cutoff))
+Eout out 0 lp 0 0.6
+.ends
+* =====================================================================
+*  OUTPUT - DC block, master, line and headphone
+* =====================================================================
+.subckt OUT in line hp
+Cdc in o1 1u
+Rdc o1 0 100k
+Ro1 o1 w {50k*(1-MASTER)+1}
+Ro2 w  0 {50k*MASTER+1}
+XAln w line line OPA aol=200000 gbp=3e+06 rout=75 vsat=11 pole=15
+Rhp line hp 47
+Rh  hp  0  32
+.ends
+* ---------------------------- BLOCKS --------------------------------
+* ---------------------------- KNOBS ---------------------------------
+* ---- Circuit Studio layout (ignored by SPICE) ----
+.tran 2u 300m 0 2u UIC
+.control
+run
+wrdata /home/szilu/Documents/synth/local/work/wave.txt v(osc1)
+.endc
+.end

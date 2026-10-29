@@ -1,0 +1,246 @@
+* Modular Synth + Guitar Interface
+* Three saw-core VCOs into a mixer, through the Polivoks-style SVF and out the
+* output stage. The guitar input has its own preamp and envelope follower that
+* opens the filter as you play. The keyboard drives the VCO pitch bus.
+
+* ---------------------------- KNOBS ---------------------------------
+.param VCO1_FREQ = 220
+.param VCO2_FREQ = 277.2
+.param VCO3_FREQ = 329.6
+.param MIX1_L1 = 1
+.param MIX1_L2 = 1
+.param MIX1_L3 = 1
+.param MIX1_L4 = 0.05
+.param VCF_IC = 31u
+.param VCF_RES = 0.5
+.param VCF_DRIVE = 1
+.param VCF_CVAMT = 20u
+.param GTR_GAIN = 10
+.param MASTER = 0.7
+.param KEYBOARD1_PITCH = 0
+.param KEYBOARD1_VEL = 3.94
+.param GATE = 0
+
+* ---------------------------- PATCH --------------------------------
+XKEYBOARD1 pitch gate vel trig KEYBOARD1
+XSRC in SRC
+XVCO1 pitch osc1 VCO1
+XVCO2 pitch osc2 VCO2
+XVCO3 pitch osc3 VCO3
+XGUITAR in gtr env GUITAR
+XMIX osc1 osc2 osc3 gtr mix MIXER
+XVCF mix env filt POLIVOKSVCF
+XOUT filt line hp OUT
+
+* ---------------------------- MODELS -------------------------------
+.model SW_VCO SW (Vt=2.5 Vh=2.0 Ron=3k Roff=1e12)
+.model D_EXPO D (IS=1e-14 N=1 RS=0)
+.model OP_BLK OPAMP (aol=2e5 gbp=3e6 rin=1e12 rout=75 vsat=11)
+.model K140UD12 OTA (IS=1e-14 VT=0.02585 VPOS=6 VNEG=-6 VDROPPOS=1 VDROPNEG=1)
+.model opa OPAMP (aol=2e5 gbp=3e6 rin=1e12 rout=75 vsat=13)
+.model D1N4148 D (IS=2.52n N=1.752 RS=0.568)
+.model SW_CLAMP SW (Vt=0.05 Vh=0.01 Ron=10 Roff=1e12)
+
+* =====================================================================
+*  KEYBOARD - pitch / gate / velocity from the on-screen keys
+* =====================================================================
+.subckt KEYBOARD1 pitch_out gate_out vel_out trig_out
+*@module keyboard
+;@port pitch_out label=Pitch sig=cv
+;@port gate_out label=Gate sig=gate
+;@port vel_out label=Vel sig=cv
+;@port trig_out label=Trig sig=gate
+Vp pitch_out 0 DC {KEYBOARD1_PITCH}
+Vg gate_out  0 DC {5*GATE}
+Vv vel_out   0 DC {KEYBOARD1_VEL}
+Ct gate_out t 100n
+Rt t 0 20k
+St t 0 0 t SW_CLAMP
+Et trig_out 0 t 0 1
+.ends
+
+* =====================================================================
+*  SOURCE - guitar test signal
+* =====================================================================
+.subckt SRC in
+;@port in label=Guitar
+Vin in 0 AC 1 0 SIN(0 0.2 220)
+.ends
+
+* =====================================================================
+*  VCO 1 - saw core, exponential converter, soft reset switch
+* =====================================================================
+.subckt VCO1 pitch out
+;@port pitch label=Pitch sig=cv
+;@port out label=Saw
+Vb vo 0 DC {0.02585*ln(max(3.9984e-4*VCO1_FREQ, 1e-30)/1e-11)}
+Ep vd1 vo pitch 0 0.0179176
+Eh vd vd1 cv 0 0.0046468
+Dx vd vs D_EXPO
+En vn 0 0 vs 1e6
+Rf vs vn 1k
+Ec cv 0 0 vn 1
+G1 0 ramp cv 0 100u
+C1 ramp 0 10n
+S1 ramp 0 ramp 0 SW_VCO
+Vmid mid 0 DC 2.5
+E1 out 0 ramp mid 0.15
+.ends
+
+* =====================================================================
+*  VCO 2
+* =====================================================================
+.subckt VCO2 pitch out
+;@port pitch label=Pitch sig=cv
+;@port out label=Saw
+Vb vo 0 DC {0.02585*ln(max(3.9984e-4*VCO2_FREQ, 1e-30)/1e-11)}
+Ep vd1 vo pitch 0 0.0179176
+Eh vd vd1 cv 0 0.0046468
+Dx vd vs D_EXPO
+En vn 0 0 vs 1e6
+Rf vs vn 1k
+Ec cv 0 0 vn 1
+G1 0 ramp cv 0 100u
+C1 ramp 0 10n
+S1 ramp 0 ramp 0 SW_VCO
+Vmid mid 0 DC 2.5
+E1 out 0 ramp mid 0.15
+.ends
+
+* =====================================================================
+*  VCO 3
+* =====================================================================
+.subckt VCO3 pitch out
+;@port pitch label=Pitch sig=cv
+;@port out label=Saw
+Vb vo 0 DC {0.02585*ln(max(3.9984e-4*VCO3_FREQ, 1e-30)/1e-11)}
+Ep vd1 vo pitch 0 0.0179176
+Eh vd vd1 cv 0 0.0046468
+Dx vd vs D_EXPO
+En vn 0 0 vs 1e6
+Rf vs vn 1k
+Ec cv 0 0 vn 1
+G1 0 ramp cv 0 100u
+C1 ramp 0 10n
+S1 ramp 0 ramp 0 SW_VCO
+Vmid mid 0 DC 2.5
+E1 out 0 ramp mid 0.15
+.ends
+
+* =====================================================================
+*  GUITAR - Hi-Z preamp + envelope follower
+* =====================================================================
+.subckt GUITAR in gtr env
+;@port in  label=In
+;@port gtr label=Guitar
+;@port env label=Env sig=cv
+Cin  in  g1  100n
+Rhi  g1  0   1MEG
+Reg  gfb 0   10k
+Ref  gfb gtr {10k*(GTR_GAIN-1)+1}
+Ap   g1  gfb gtr OP_BLK
+Drec gtr dx  D1N4148
+Red  dx  env 1k
+Cen  env 0   1u
+Rdc  env 0   100k
+.ends
+
+* =====================================================================
+*  MIXER - inverting summer, one level per input
+* =====================================================================
+.subckt MIXER in1 in2 in3 in4 out
+;@port in1 label=In1
+;@port in2 label=In2
+;@port in3 label=In3
+;@port in4 label=In4
+;@port out label=Out
+R1 in1 s {10k/(MIX1_L1+1m)}
+R2 in2 s {10k/(MIX1_L2+1m)}
+R3 in3 s {10k/(MIX1_L3+1m)}
+R4 in4 s {10k/(MIX1_L4+1m)}
+Rf s out 10k
+A1 0 s out OP_BLK
+.ends
+
+* =====================================================================
+*  POLIVOKS VCF - 2-pole OTA-C SVF, linear resonance
+*  The cutoff port is the envelope CV; the knob sets the DC bias.
+* =====================================================================
+.subckt POLIVOKSVCF in cutoff out
+;@port in     label=In
+;@port cutoff label=Cutoff sig=cv
+;@port out    label=Out
+R_in in sn {10k/VCF_DRIVE}
+R_lp lp sn 10k
+R_q  bp sn {6k+900k*VCF_RES*VCF_RES}
+R_f  sn hp 10k
+Asum 0 sn hp opa
+R1a hp i1 10k
+R1b i1 0 220
+O1  i1 0 cv bpc K140UD12
+C1  bpc 0 2.2n
+Ab1 bpc bp bp opa
+R2a bp i2 10k
+R2b i2 0 220
+O2  i2 0 cv lpc K140UD12
+C2  lpc 0 2.2n
+Ab2 lpc lp lp opa
+Bcv cv 0 V = max(1e-9, {VCF_IC} + {VCF_CVAMT}*V(cutoff))
+Eout out 0 lp 0 0.6
+.ends
+
+* =====================================================================
+*  OUTPUT - DC block, master, line and headphone
+* =====================================================================
+.subckt OUT in line hp
+;@port in   label=In
+;@port line label=Line
+;@port hp   label=Phones
+Cdc in o1 1u
+Rdc o1 0 100k
+Ro1 o1 w {50k*(1-MASTER)+1}
+Ro2 w  0 {50k*MASTER+1}
+Aln w line line OP_BLK
+Rhp line hp 47
+Rh  hp  0  32
+.ends
+
+* ---------------------------- BLOCKS --------------------------------
+;@block XKEYBOARD1 Keyboard
+;@block XSRC Source
+;@block XVCO1 "VCO 1"
+;@block XVCO2 "VCO 2"
+;@block XVCO3 "VCO 3"
+;@block XGUITAR Guitar
+;@block XMIX Mixer
+;@block XVCF "Polivoks VCF"
+;@block XOUT Output
+;@monitor mode=mono pan=0
+;@output L line R line scale 1.0
+
+* ---------------------------- KNOBS ---------------------------------
+;@knob Pitch1 VCO1_FREQ law=hz range=30..2k def=220
+;@knob Pitch2 VCO2_FREQ law=hz range=30..2k def=277
+;@knob Pitch3 VCO3_FREQ law=hz range=30..2k def=330
+;@knob Cutoff VCF_IC    law=hz range=20..12k def=900 cal=21.8:569n,35.2:1.19u,73.6:2.51u,154:5.26u,323:11.1u,675:23.1u,1.41k:48.7u,2.96k:102u,6.19k:215u,13.5k:450u cc=74
+;@knob Reso   VCF_RES   law=lin range=0..1 def=0.5 unit=% cc=71
+;@knob Drive  VCF_DRIVE law=log range=300m..2 def=1 cc=20
+;@knob Env    VCF_CVAMT law=lin range=0..0.0001 def=0.00002 unit=uA*1e6
+;@knob Gain   GTR_GAIN  law=lin range=1..20 def=10
+;@knob Gtr    MIX1_L4   law=lin range=0..0.5 def=0.05
+;@knob Master MASTER    law=log range=0..1 def=0.7
+;@gate GATE
+
+* ---- Circuit Studio layout (ignored by SPICE) ----
+*@cs part XKEYBOARD1 -50 0 0 0
+*@cs part XSRC -26 12 0 0
+*@cs part XGUITAR 0 12 0 0
+*@cs part XVCO1 24 -14 0 0
+*@cs part XVCO2 24 0 0 0
+*@cs part XVCO3 24 14 0 0
+*@cs part XMIX 48 0 0 0
+*@cs part XVCF 72 0 0 0
+*@cs part XOUT 96 0 0 0
+*@cs deco output 108 6 0 0 line
+
+.end

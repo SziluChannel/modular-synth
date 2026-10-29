@@ -1,0 +1,48 @@
+* subckt test: MS-20 VCF with O (OTA) cards inside .subckt
+.param IABC  = 33u
+.param RES_K = 0.5
+.model LM13600 OTA (IS=1e-14 VT=0.02585 VPOS=12 VNEG=-12 VDROPPOS=1.5 VDROPNEG=1.5)
+.model opamp_buf OPAMP(aol=1e5 gbp=1e6 rin=1e12 rout=100 vsat=11)
+.model opamp_res OPAMP(aol=2e5 gbp=1e6 rin=1e12 rout=75 vsat=11)
+.model D1N4148 D (IS=2.52n N=1.752 RS=0.568)
+Vpos vpos 0 DC 12
+Vneg vneg 0 DC -12
+Vin  in 0 SIN(0 0.2 220)
+
+.subckt MS20_VCF in out
+Vcv1  cv1 0 DC {IABC}
+Vcv2  cv2 0 DC {IABC}
+R_in  in   s1in 10k
+R_ia  s1in 0    220
+R_f1  v2b  n1   10k
+R_f1a n1   0    220
+O1    s1in n1   cv1  v2   LM13600
+C1    v2   resamp 2.2n
+Abuf  v2   v2b  v2b  opamp_buf
+R_i2  v2b  s2in 10k
+R_i2a s2in 0    220
+R_f2  out  n2   10k
+R_f2a n2   0    220
+O2    s2in n2   cv2  vo   LM13600
+C2    vo   0    2.2n
+Aout  vo   out  out  opamp_buf
+R_res out  rwiper 39k
+Rp_a  rwiper rfb_in {47k*(1-RES_K)+1}
+Rp_b  rfb_in 0      {47k*RES_K+1}
+Ares  rfb_in rgain resamp opamp_res
+R_rg  resamp rgain 10k
+R_rf  rgain  0     3.3k
+D_p1  resamp dn1    D1N4148
+D_n1  dn1    resamp D1N4148
+D_p2  dn1    dn2    D1N4148
+D_n2  dn2    dn1    D1N4148
+D_p3  dn2    rgain  D1N4148
+D_n3  rgain  dn2    D1N4148
+.ends
+
+XVCF in out MS20_VCF
+;@output out
+.control
+tran 20u 50m UIC
+.endc
+.end

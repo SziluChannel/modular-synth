@@ -1,0 +1,36 @@
+* Module 4: Output Processor & Headphone Driver
+
+VCC VCC 0 DC 12
+VEE VEE 0 DC -12
+
+* Input audio
+VIN IN 0 SIN(0 2 1000)
+
+* DC block
+Cdc IN N1 10u
+Rdc N1 0 100k
+
+* Master volume pot (A100k) modeled as divider at mid
+RV1 N1 W 50k
+RV2 W 0 50k
+
+* Line output buffer (low-Z)
+Eline LINE 0 W 0 1
+Rline LINE LOUT 100
+
+* Headphone buffer (NE5532) driving 32 ohm
+Ehp HP 0 W 0 1
+Rhp HP HPOUT 10
+RLhp HPOUT 0 32
+
+* Decoupling
+Cdec1 VCC 0 100n
+Cdec2 VEE 0 100n
+
+.control
+.options reltol=1e-3 abstol=1e-9 vntol=1e-6 method=gear
+tran 10u 50m uic
+wrdata /tmp/output_headphone.cir.csv time HPOUT
+print v(HPOUT)
+.endc
+.end

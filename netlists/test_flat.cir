@@ -1,0 +1,55 @@
+* flat VCO -> VCF smoke test (O-card VCF)
+.param F = 220
+.param IABC = 33u
+.param RES_K = 0.5
+.model LM13600 OTA (IS=1e-14 VT=0.02585 VPOS=12 VNEG=-12 VDROPPOS=1.5 VDROPNEG=1.5)
+.model opamp_buf OPAMP(aol=1e5 gbp=1e6 rin=1e12 rout=100 vsat=11)
+.model opamp_res OPAMP(aol=2e5 gbp=1e6 rin=1e12 rout=75 vsat=11)
+.model D1N4148 D (IS=2.52n N=1.752 RS=0.568)
+.model SW_SCH SW (Vt=2.5 Vh=2.0 Ron=10 Roff=10Meg)
+Vpos vpos 0 DC 12
+Vneg vneg 0 DC -12
+Vref vr 0 DC 2.5
+G1 0 ramp vr 0 {F/12500}
+C1 ramp 0 50n IC=0
+S1 ramp 0 ramp 0 SW_SCH
+A1 ramp vco vco opamp_buf
+Rload vco 0 100k
+Rlp vco lp 1k
+Clp lp 0 10n
+
+Vcv1 cv1 0 DC {IABC}
+Vcv2 cv2 0 DC {IABC}
+Cc lp ac 100n
+Rac ac 0 100k
+Rin ac s1in 10k
+Ria s1in 0 220
+Rf1 v2b n1 10k
+Rf1a n1 0 220
+O1 s1in n1 cv1 v2 LM13600
+Cv2 v2 resamp 2.2n
+Abuf v2 v2b v2b opamp_buf
+Ri2 v2b s2in 10k
+Ri2a s2in 0 220
+Rf2 vob n2 10k
+Rf2a n2 0 220
+O2 s2in n2 cv2 vo LM13600
+Cv3 vo 0 2.2n
+Aout vo vob vob opamp_buf
+Rres vob rwiper 39k
+Rpa rwiper rfb_in {47k*(1-RES_K)+1}
+Rpb rfb_in 0 {47k*RES_K+1}
+Ares rfb_in rgain resamp opamp_res
+Rrg resamp rgain 10k
+Rrf rgain 0 3.3k
+Dp1 resamp dn1 D1N4148
+Dn1 dn1 resamp D1N4148
+Dp2 dn1 dn2 D1N4148
+Dn2 dn2 dn1 D1N4148
+Dp3 dn2 rgain D1N4148
+Dn3 rgain dn2 D1N4148
+;@output vob
+.control
+tran 20u 100m UIC
+.endc
+.end

@@ -1,0 +1,51 @@
+* Early MS-20 / Korg-35 style 12 dB Sallen-Key lowpass
+* OTA-C version for Circuit Studio (circuit.synthcity.org)
+* Bootstrapped first-section capacitor + diode-limited positive feedback.
+* Topology per Tim Stinchcombe, "Analysis of the Korg MS-20 filters"
+* (timstinchcombe.co.uk) and Zavalishin, "The Art of VA Filter Design".
+
+.param IC  = 29.04u     ; OTA bias current - sets cutoff
+.param RES = 0.75       ; resonance 0..1  (K = 2.15 * RES)
+
+Vin in 0 AC 1 0 SIN(0 0.2 220)
+
+* ---- Section 1: OTA VCR into C1, C1 foot on the feedback node ----
+Rp1a in p1 47k
+Rp1b p1 0 470
+Rn1a v1b n1 47k
+Rn1b n1 0 470
+O1 p1 n1 cv v1 K35
+C1 v1 fb 2.2n
+Ab1 v1 v1b v1b opa
+
+* ---- Section 2: grounded C2 ----
+Rp2a v1b p2 47k
+Rp2b p2 0 470
+Rn2a y n2 47k
+Rn2b n2 0 470
+O2 p2 n2 cv v2 K35
+C2 v2 0 2.2n
+Ab2 v2 y y opa
+
+* ---- Feedback amp: resonance pot then x2.15, diode soft limit ----
+Rk_a y kw {47k*(1-RES)+1}
+Rk_b kw 0 {47k*RES+1}
+Rg fn 0 10k
+Rf fn fb 11.5k
+D1 fb fd D1N4148
+D2 fd fb D1N4148
+Rd fd fn 3.3k
+Afb kw fn fb opa
+
+Vcv cv 0 DC {IC}
+
+.model K35 OTA (IS=1e-14 VT=0.02585 VPOS=15 VNEG=-15 VDROPPOS=1.5 VDROPNEG=1.5)
+.model D1N4148 D (IS=2.52n N=1.752 RS=0.568)
+.model opa OPAMP (aol=2e5 gbp=3e6 rin=1e12 rout=75 vsat=13)
+
+;@input  midi.note -> freq(Vin)
+;@knob Cutoff IC law=hz range=20..12k def=900 cal=33.9:2.31e-6,65.5:4.85e-6,136:1.02e-5,286:2.14e-5,599:4.49e-5,1260:9.42e-5,2640:1.98e-4 cc=74
+;@knob Resonance RES law=lin range=0..1 def=0.75 unit=% cc=71
+;@output y scale 1.0
+
+.end

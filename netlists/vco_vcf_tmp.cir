@@ -1,0 +1,113 @@
+* =====================================================================
+*  VCO + MS-20 STYLE VCF   (reduced modular synth, two submodules)
+*
+*  Only the sound-producing blocks are kept:
+*    MODULE 1  VCO  - op-amp triangle core, no ideal switches
+*    MODULE 2  VCF  - two OTA 1-poles + diode-limited resonance
+*
+*  No PSU section, no guitar input, no headphone/output stage.
+*
+*  NOTE ON PORTABILITY
+*  The Circuit Studio runtime rejects `O` (OTA) cards inside a
+*  `.subckt` body ("unsupported element kind `o`"), so the OTA in
+*  MODULE 2 is written as its small-signal equivalent, a `G` VCCS
+*  with gm = Iabc/(2*Vt) = 19.34*Iabc. Electrically identical in the
+*  linear region; the diode clamp still provides the MS-20 style
+*  resonance limiting.
+* =====================================================================
+
+* ---------------------------- KNOBS ----------------------------------
+.param VCO_FREQ = 220          ; triangle pitch, Hz
+.param VCF_IABC = 7u          ; OTA bias current  -> cutoff ~1 kHz
+.param VCF_RES  = 0.5          ; resonance 0..1
+
+* ---------------------------- MODELS ---------------------------------
+.model OPAMP_BUF OPAMP(aol=1e5 gbp=1e6 rin=1e12 rout=100 vsat=11)
+.model OPAMP_RES OPAMP(aol=2e5 gbp=1e6 rin=1e12 rout=75  vsat=11)
+.model D1N4148   D     (IS=2.52n N=1.752 RS=0.568)
+
+* ---------------------------- RAILS ----------------------------------
+Vpos vpos 0 DC 12
+Vneg vneg 0 DC -12
+Cdp  vpos 0 100n
+Cdn  vneg 0 100n
+
+* =====================================================================
+*  MODULE 1 : VCO  (triangle)
+*
+*  A1 = inverting integrator, A2 = Schmitt trigger.
+*  The integrator ramps until the Schmitt flips; the Schmitt
+*  thresholds are +/- (Rsch/Rhy)*Vsat = +/- 1.1 V, which sets the
+*  triangle amplitude.  Frequency f = 2.5 / (Rosc * Cint).
+*  With Cint = 100n, Rosc = 2.5/(f * 100n)  ->  113.6k at 220 Hz.
+* =====================================================================
+.subckt VCO out
+Rosc  sq  ni  {2.5/(VCO_FREQ*100n)}   ; sets pitch
+Cint  out ni  100n IC=0.2             ; integrator cap (IC = start-up seed)
+Aint  0   ni  out OPAMP_BUF           ; integrator
+Rsch  out px  100k                    ; Schmitt input
+Rhy   sq  px  1MEG                    ; Schmitt positive feedback
+Asch  px  0   sq  OPAMP_BUF           ; comparator / square output
+Rld   out 0   100k                    ; output load / DC return
+.ends
+
+* =====================================================================
+*  MODULE 2 : VCF  (MS-20 style, two buffered OTA 1-poles)
+*
+*  Section 1: gm1 = 19.34*Iabc, C1 = 2.2n  -> fc ~ 1 kHz at 33u
+*  Section 2: identical, buffered by Aout
+*  Resonance: out -> pot -> x4 gain stage -> C1, clamped by 3 diode
+*  drops across the gain-setting resistor (the MS-20 "scream").
+* =====================================================================
+.subckt VCF in out
+Vcv1  cv1 0 DC {VCF_IABC}
+Vcv2  cv2 0 DC {VCF_IABC}
+
+* --- section 1 -------------------------------------------------------
+R_in  in   s1in 10k                   ; input attenuator into OTA window
+R_ia  s1in 0    220
+R_f1  v2b  n1   10k                   ; local feedback attenuator
+R_f1a n1   0    220
+G1    0    v2  s1in n1 {VCF_IABC*19.34}
+C1    v2   resamp 2.2n
+Abuf  v2   v2b  v2b OPAMP_BUF
+
+* --- section 2 -------------------------------------------------------
+R_i2  v2b  s2in 10k
+R_i2a s2in 0    220
+R_f2  out  n2   10k
+R_f2a n2   0    220
+G2    0    vo  s2in n2 {VCF_IABC*19.34}
+C2    vo   0    2.2n
+Aout  vo   out  out OPAMP_BUF
+
+* --- resonance loop --------------------------------------------------
+R_res out    rwiper  39k
+Rp_a  rwiper rfb_in {47k*(1-VCF_RES)+1}
+Rp_b  rfb_in 0      {47k*VCF_RES+1}
+Ares  rfb_in rgain  resamp OPAMP_RES
+R_rg  resamp rgain  10k
+R_rf  rgain  0      3.3k
+D_p1  resamp dn1    D1N4148
+D_n1  dn1    resamp  D1N4148
+D_p2  dn1    dn2     D1N4148
+D_n2  dn2    dn1     D1N4148
+D_p3  dn2    rgain   D1N4148
+D_n3  rgain  dn2     D1N4148
+.ends
+
+* =====================================================================
+*  TOP LEVEL :  VCO  ->  VCF  ->  output
+* =====================================================================
+XVCO tri  VCO
+XVCF tri filt VCF
+
+* ---------------------------- CONTROLS / OUTPUT ----------------------
+;@output filt
+
+* ---------------------------- ANALYSIS -------------------------------
+.control
+tran 10u 100m UIC
+.endc
+
+.end

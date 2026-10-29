@@ -1,0 +1,64 @@
+* Early MS-20-style lowpass — Sallen-Key lowpass
+* One-line: early MS-20 (Korg-35 module) style 12 dB Sallen-Key lowpass with diode-limited
+*   positive feedback — screams at high resonance without blowing up.
+* TOPOLOGY: two one-pole sections whose "resistors" are voltage-controlled (the Korg-35 used
+*   transistor VCRs; here OTA-C cells, as in Thomas Henry's and ElectricDruid's Korg-35 clones).
+*   The first section's capacitor is NOT grounded: its foot is driven by the feedback amplifier
+*   (output x K), i.e. the bootstrapped Sallen-Key capacitor — the feedback enters as a highpass
+*   into the first pole, which is the Korg-35 structure (vs the later OTA MS-20 that feeds back
+*   into the OTA input). The feedback amp is a non-inverting stage whose gain resistor is
+*   shunted by anti-parallel 1N4148s, so resonance level self-limits softly. Q = 1/(2 - K).
+* SOURCE: Korg-35 topology as analysed by Tim Stinchcombe ("Analysis of the Korg MS-20 filters",
+*   timstinchcombe.co.uk) and Vadim Zavalishin "The Art of VA Filter Design" (Korg-35 chapter);
+*   values generic.
+
+.param IC  = 56.31u     ; VCR (OTA) bias current — sets the cutoff
+.param RES = 1    ; resonance 0..1 (feedback gain K = 2.15 x RES)
+
+* --- triangle VCO ---
+Rosc  sq  ni  {2.5/(220*100n)}
+Cint  tri ni  100n IC=0.2
+Aint  0   ni  tri opa
+Rsch  tri px  100k
+Rhy   sq  px  1MEG
+Asch  px  0   sq  opa
+Rld   tri 0   100k
+* --- level into the VCF (0.2 V) ---
+Rt1 tri in 100k
+Rt2 in  0  22k
+* section 1: OTA VCR into C1, C1 foot on the feedback node
+Rp1a in p1 47k
+Rp1b p1 0 470
+Rn1a v1b n1 47k
+Rn1b n1 0 470
+O1 p1 n1 cv v1 K35
+C1 v1 fb 2.2n
+Ab1 v1 v1b v1b opa
+* section 2: grounded C2
+Rp2a v1b p2 47k
+Rp2b p2 0 470
+Rn2a y n2 47k
+Rn2b n2 0 470
+O2 p2 n2 cv v2 K35
+C2 v2 0 2.2n
+Ab2 v2 y y opa
+* feedback amp: resonance pot then x2.15 with diode soft limit
+Rk_a y kw {47k*(1-RES)+1}
+Rk_b kw 0 {47k*RES+1}
+Rg fn 0 10k
+Rf fn fb 11.5k
+D1 fb fd D1N4148
+D2 fd fb D1N4148
+Rd fd fn 3.3k
+Afb kw fn fb opa
+
+Vcv cv 0 DC {IC}
+
+.model K35 OTA (IS=1e-14 VT=0.02585 VPOS=15 VNEG=-15 VDROPPOS=1.5 VDROPNEG=1.5)
+.model D1N4148 D (IS=2.52n N=1.752 RS=0.568)
+.model opa OPAMP (aol=2e5 gbp=3e6 rin=1e12 rout=75 vsat=13)
+;@knob Cutoff IC law=hz range=20..12k def=900 cal=33.9:2.31e-6,65.5:4.85e-6,136:1.02e-5,286:2.14e-5,599:4.49e-5,1260:9.42e-5,2640:1.98e-4 cc=74
+;@knob Resonance RES law=lin range=0..1 def=0.75 unit=% cc=71
+;@output y scale 1.0
+
+.end

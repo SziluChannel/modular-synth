@@ -1,0 +1,22 @@
+* opamp triangle VCO smoke test (no switches)
+.param F  = 220
+.param Ci = 100n
+.param Ri = {2.5/(F*Ci)}
+.model opamp_buf OPAMP(aol=1e5 gbp=1e6 rin=1e12 rout=100 vsat=11)
+Vpos vpos 0 DC 12
+Vneg vneg 0 DC -12
+* integrator: tri = -(1/RiCi) int(sq)
+Ri  sq  ni  {Ri}
+Ci  tri ni  {Ci} IC=0.2
+Ai  0   ni  tri opamp_buf
+* schmitt trigger, thresholds +/- (Rs/Rfb)*vsat
+Rs  tri px  100k
+Rfb sq  px  1MEG
+As  px  0   sq  opamp_buf
+Rload tri 0 100k
+;@output tri
+;@output sq
+.control
+tran 5u 50m UIC
+.endc
+.end

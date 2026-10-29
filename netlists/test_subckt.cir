@@ -1,0 +1,17 @@
+* subckt smoke test: G + C + A (no switch)
+.model opamp_buf OPAMP(aol=1e5 gbp=1e6 rin=1e12 rout=100 vsat=11)
+Vpos vpos 0 DC 12
+Vneg vneg 0 DC -12
+.subckt VCO out
+Vref vr 0 DC 2.5
+G1 0 ramp vr 0 1.76e-2
+C1 ramp 0 50n IC=0
+A1 ramp out out opamp_buf
+.ends
+XVCO vco VCO
+Rload vco 0 100k
+;@output vco
+.control
+tran 20u 100m UIC
+.endc
+.end

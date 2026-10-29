@@ -1,0 +1,13 @@
+* Module 5: Eurorack Power Supply (simulated as ideal regulated rails)
+VCC VCC 0 DC 12
+VEE VEE 0 DC -12
+Cdec1 VCC 0 100n
+Cdec2 VEE 0 100n
+Cbulk1 VCC 0 10u
+Cbulk2 VEE 0 10u
+.control
+tran 1m 100m uic
+wrdata /tmp/power_supply.cir.csv time VCC
+print v(VCC) v(VEE)
+.endc
+.end

@@ -1,0 +1,62 @@
+* VCO1 -> VCF -> output smoke test
+.param VCO1_FREQ = 220
+.param VCF1_IABC = 33u
+.param VCF1_RES  = 0.5
+.param MASTER    = 0.7
+.model LM13600  OTA   (IS=1e-14 VT=0.02585 VPOS=12 VNEG=-12 VDROPPOS=1.5 VDROPNEG=1.5)
+.model opamp_buf OPAMP(aol=1e5 gbp=1e6 rin=1e12 rout=100 vsat=11)
+.model opamp_res OPAMP(aol=2e5 gbp=1e6 rin=1e12 rout=75  vsat=11)
+.model D1N4148  D     (IS=2.52n N=1.752 RS=0.568)
+.model SW_SCH   SW    (Vt=2.5 Vh=2.0 Ron=10 Roff=10Meg)
+Vpos vpos 0 DC 12
+Vneg vneg 0 DC -12
+Vr1 vr1 0 DC 2.5
+G1 0 ramp1 vr1 0 {VCO1_FREQ/12500}
+Cv1 ramp1 0 50n IC=0
+S1 ramp1 0 ramp1 0 SW_SCH
+Av1 ramp1 vco1 vco1 opamp_buf
+
+Vcv1 cv1 0 DC {VCF1_IABC}
+Vcv2 cv2 0 DC {VCF1_IABC}
+Rd1 vco1 d1 10k
+Rd2 d1 0 1k
+Cc d1 ac1 100n
+Rac ac1 0 100k
+Rf_in ac1 s1in 10k
+Rf_in in s1in 10k
+Rf_ia  s1in 0    220
+Rf_f1  v2b  n1   10k
+Rf_f1a n1   0    220
+O1     s1in n1 cv1 v2 LM13600
+Cf1    v2 resamp 2.2n
+Abuf   v2 v2b v2b opamp_buf
+Rf_i2  v2b s2in 10k
+Rf_i2a s2in 0   220
+Rf_f2  vob n2   10k
+Rf_f2a n2  0    220
+O2     s2in n2 cv2 vo LM13600
+Cf2    vo 0 2.2n
+Aout   vo vob vob opamp_buf
+Rf_res vob rwiper 39k
+Rf_pa  rwiper rfb_in {47k*(1-VCF1_RES)+1}
+Rf_pb  rfb_in 0     {47k*VCF1_RES+1}
+Ares   rfb_in rgain resamp opamp_res
+Rf_rg  resamp rgain 10k
+Rf_rf  rgain 0 3.3k
+D_p1 resamp dn1 D1N4148
+D_n1 dn1 resamp D1N4148
+D_p2 dn1 dn2 D1N4148
+D_n2 dn2 dn1 D1N4148
+D_p3 dn2 rgain D1N4148
+D_n3 rgain dn2 D1N4148
+Cdc vob o1 10u
+Rdc o1 0 100k
+Ro1 o1 w {50k*MASTER+1}
+Ro2 w 0 {50k*(1-MASTER)+1}
+Aln w line line opamp_buf
+;@output vco1
+;@output line
+.control
+tran 20u 50m UIC
+.endc
+.end

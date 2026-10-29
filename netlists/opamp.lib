@@ -1,0 +1,9 @@
+* Simple rail-connected opamp macromodel
+.subckt OPAMP INP INM OUT VCC VEE
+Rin INP INM 1e12
+Egain N1 0 INP INM 1e5
+Rout N1 OUT 100
+Dhi OUT VCC DCLAMP
+Dlo VEE OUT DCLAMP
+.model DCLAMP D(Is=1e-12 Rs=1)
+.ends OPAMP

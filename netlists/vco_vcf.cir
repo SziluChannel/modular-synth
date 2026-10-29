@@ -1,0 +1,97 @@
+* =====================================================================
+*  VCO + MS-20 / Korg-35 VCF   (reduced modular synth)
+*
+*  MODULE 1  VCO : op-amp triangle core (integrator + Schmitt)
+*  MODULE 2  VCF : Korg-35 / early MS-20 Sallen-Key lowpass
+*                  two OTA-C VCR sections, bootstrapped C1,
+*                  diode-limited resonance
+*
+*  No PSU section, no guitar input, no headphone/output stage.
+*
+*  WHY THIS FORM
+*  - The old saw core reset a cap with an ideal S switch; that forced
+*    sub-microsecond solver steps and could not run in realtime.
+*  - The VCF is the database Korg-35 topology. It needs O (OTA) cards,
+*    which the runtime will not accept inside a .subckt, so the filter
+*    stays flat at top level. Only the VCO is a submodule.
+* =====================================================================
+
+* ---------------------------- KNOBS ----------------------------------
+.param VCO_FREQ = 220          ; triangle pitch, Hz
+.param VCF_IABC = 56.31u       ; VCR bias current -> cutoff (~750 Hz)
+.param VCF_RES  = 0.75         ; 0..1, feedback gain K = 2.15*RES
+
+* ---------------------------- MODELS ---------------------------------
+.model K35      OTA   (IS=1e-14 VT=0.02585 VPOS=15 VNEG=-15 VDROPPOS=1.5 VDROPNEG=1.5)
+.model opa      OPAMP (aol=2e5 gbp=3e6 rin=1e12 rout=75 vsat=13)
+.model D1N4148  D     (IS=2.52n N=1.752 RS=0.568)
+
+* =====================================================================
+*  MODULE 1 : VCO  (triangle)
+*  Aint = inverting integrator, Asch = Schmitt trigger.
+*  Schmitt thresholds +/- (Rsch/Rhy)*Vsat = +/-1.1 V.
+*  f = 2.5 / (Rosc * 100n)   ->  Rosc = 113.6k at 220 Hz.
+* =====================================================================
+.subckt VCO out
+Rosc  sq  ni  {2.5/(VCO_FREQ*100n)}
+Cint  out ni  100n IC=0.2
+Aint  0   ni  out opa
+Rsch  out px  100k
+Rhy   sq  px  1MEG
+Asch  px  0   sq  opa
+.ends
+
+XVCO tri  VCO
+Rld  tri  0    100k
+
+* ---------------------------- VCO -> VCF LEVEL ------------------------
+* Triangle is +/-1.1 V; the filter wants about 0.2 V at its input.
+Ra   tri  vin  100k
+Rb   vin  0    22k
+
+* =====================================================================
+*  MODULE 2 : VCF  -  Korg-35 Sallen-Key lowpass
+*
+*  Section 1: OTA VCR into C1, C1 foot on the feedback node k_fb
+*             (bootstrapped Sallen-Key cap).
+*  Section 2: OTA VCR with grounded C2.
+*  Feedback : output -> pot -> x2.15 stage -> k_fb; the gain resistor is
+*             shunted by anti-parallel 1N4148s, so resonance self-limits.
+*             Q = 1/(2 - K),  K = 2.15*RES.
+*  Cutoff   : k_cv is read by the OTA directly as a current in amperes.
+* =====================================================================
+* --- section 1 -------------------------------------------------------
+Rp1a vin    k_p1  47k
+Rp1b k_p1   0     470
+Rn1a k_v1b  k_n1  47k
+Rn1b k_n1   0     470
+O1   k_p1   k_n1  k_cv k_v1 K35
+C1   k_v1   k_fb  2.2n
+Ab1  k_v1   k_v1b k_v1b opa
+
+* --- section 2 -------------------------------------------------------
+Rp2a k_v1b  k_p2  47k
+Rp2b k_p2   0     470
+Rn2a k_vout k_n2  47k
+Rn2b k_n2   0     470
+O2   k_p2   k_n2  k_cv k_v2 K35
+C2   k_v2   0     2.2n
+Ab2  k_v2   k_vout k_vout opa
+
+* --- resonance -------------------------------------------------------
+Rk_a k_vout k_kw  {47k*(1-VCF_RES)+1}
+Rk_b k_kw   0     {47k*VCF_RES+1}
+Rg   k_fn   0     10k
+Rf   k_fn   k_fb  11.5k
+D1   k_fb   k_fd  D1N4148
+D2   k_fd   k_fb  D1N4148
+Rd   k_fd   k_fn  3.3k
+Afb  k_kw   k_fn  k_fb opa
+
+* --- cutoff bias -----------------------------------------------------
+Vcv  k_cv 0 DC {VCF_IABC}
+
+* ---------------------------- OUTPUT ----------------------------------
+;@output k_vout
+
+.end

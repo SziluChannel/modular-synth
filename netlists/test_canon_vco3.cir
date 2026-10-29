@@ -1,0 +1,271 @@
+* MS-20-style VCF — OTA revision (later MS20s, KLM-307 daughterboard)
+* ==========================================================================
+* The voltage-controlled lowpass filter from the later Korg MS-20. The early
+* MS-20 (and the MS-10) used a Korg-proprietary resin-sealed module, the
+* "Korg-35", built around transistors run in *reverse* saturation as
+* current-controlled resistors. Korg redesigned the filter for later MS-20s
+* around the LM13600 OTA — that OTA revision is what this netlist models.
+*
+* SOURCE SCHEMATIC
+*   Timothy E. Stinchcombe, "A Study of the Korg MS10 & MS20 Filters",
+*   <https://www.timstinchcombe.co.uk/synth/MS20_study.pdf>, Figure 2
+*   ("OTA-based version of later MS20s") and the §2.1 transfer-function
+*   derivation. Every R / C value and the device count below is read off
+*   that figure. Stinchcombe in turn transcribed it from the readable
+*   KLM-307 daughterboard schematic. The OTA-revision MS-20 filter is also
+*   documented by Rene Schmitz (<https://www.schmitzbits.de/ms20.html>) and
+*   Eddy Bergman's MS-20 filter build — both corroborate the topology.
+*
+* WHAT THE OTA MS-20 ACTUALLY IS — and the modelling choices here
+* --------------------------------------------------------------------------
+* Stinchcombe's key finding (§1, §2.1): the OTA MS-20 filter is NOT a true
+* Sallen-Key — it is "two cascaded, buffered first-order sections". Each
+* section is an OTA whose transconductance replaces the section resistor:
+*   - OTA `X1` (LM13600 half) + cap C4 = first 1-pole lowpass section.
+*   - A unity-gain buffer follows X1's output (this buffer is the structural
+*     difference from a real Sallen-Key — it removes the inter-stage loading).
+*   - OTA `X2` (LM13600 half) + cap C5 = second 1-pole lowpass section.
+*   - Global resonance feedback (`k2`) is taken from the output back to the
+*     first section's "+" reference, via a non-inverting op-amp gain stage.
+*
+* Stinchcombe §2.1, eq. (3)-(5): each OTA section behaves as a simple RC
+* section with the resistor set by the OTA. With `Vin'` the OTA non-inverting
+* input, `R1`/`R2` the input attenuator (R20/R21 = 220R here) and `R3` the
+* OTA feedback (R22 = 10k):
+*       i_o = 19.2*Iabc*(V+ - V-)            (LM13600 transconductance)
+*       omega_c = K*k / C,  K = 19.2*Iabc,  k ~= R2/R1   (input attenuation)
+* and the complete closed-loop transfer function is the standard biquad
+*       Vo/Vin = -k1 / ( s^2/wc^2 + (2 - k1*k2)*s/wc + 1 )
+* with k1 = 1 (the inter-stage buffer gain) and k2 the resonance-feedback
+* gain. Self-oscillation at k2 -> 2/k1 = 2.
+*
+* circuit-runtime mapping. circuit-runtime has a first-class OTA device
+* (the `O` card — `Iout = Iabc*tanh(Vin/2Vt)` + output rail-current
+* starvation), the exact LM13600/CA3080 behavioural model already used by
+* `svf-ota.cir`, `wasp-filter.cir` and `efm-3521-vcf.cir`. The two LM13600
+* halves -> two `O` cards. The inter-stage unity buffer and the resonance
+* op-amp -> `A`-card op-amps (the real X1 buffer is a discrete JFET+op-amp
+* follower; X5 is a uA741). The MS-20's resonance-feedback diode clamp
+* (D8-D13, six 1N4148 in three anti-parallel pairs across the feedback
+* resistor) -> `D` cards: this is the MS-20's signature — the diodes bound
+* self-oscillation and add the amplitude-dependent screaming-resonance
+* distortion the filter is famous for, exactly the role the 1N4148 clamp
+* plays in `sem-filter.cir`.
+*
+* NOTE ON THE OTA TRANSCONDUCTANCE SCALING
+*   The real LM13600 has gm = 19.2*Iabc. circuit-runtime's OTA model uses the
+*   physical gm = Iabc/(2*Vt) ~= 19.34*Iabc at Vt=25.85mV. Each OTA reads
+*   its input and its own (buffered) output through matched 10k/220R
+*   attenuators (k = 220/10220 = 0.0215), so the differential stays in the
+*   OTA's linear +-20 mV range and each section is a unity-gain 1-pole
+*   lowpass with omega_c = 19.34*Iabc*k/C:
+*       fc = 3.01e7 * Iabc   (Hz per A)  ->  1 kHz at 33 uA, 15 kHz at 0.5 mA
+*   So the cutoff knob moves the corner and the passband stays at 0 dB.
+*   (2026-10-08 fix: the previous netlist had no local feedback on either
+*   OTA, so both sections were bare integrators whose corner was set by the
+*   resonance pot's load; IABC only changed the gain.)
+*
+* TOPOLOGY (node by node — Stinchcombe Fig. 2 / eq. 3-5)
+* --------------------------------------------------------------------------
+*   Section 1: OTA `O1`, + input = attenuated `in` (R_in/R_ia), - input =
+*       attenuated buffered output `v2b` (R_f1/R_f1a). Charges C1 on `v2`.
+*       C1's far end returns to the resonance feedback node `resamp`
+*       (k2*Vo), the MS-20's bootstrapped-capacitor resonance:
+*         v2 = H*x + (s/wc)*H*k2*Vo,  H = 1/(1 + s/wc)
+*   Inter-stage buffer `Abuf` (the JFET follower): `v2` -> `v2b`.
+*   Section 2: OTA `O2`, + = attenuated `v2b`, - = attenuated `vob`,
+*       charges C2 on `vo`; `Aout` buffers `vo` -> `vob` (the filter output).
+*   Closed loop: Vo/Vin = 1 / (s^2/wc^2 + (2 - k2)*s/wc + 1), Stinchcombe's
+*       biquad with k1 = 1: Q = 1/(2 - k2), self-oscillation at k2 = 2.
+*   Resonance: `vob` -> R_res -> VR1 pot -> non-inverting gain stage `Ares`
+*       (1 + 10k/3.3k ~= 4) with the D8-D13 diode string across its 10k
+*       feedback resistor -> `resamp`. k2 = 4.03 * 47k/(39k+47k) * RES_K
+*       ~= 2.2 * RES_K, so the filter self-oscillates near RES_K = 0.9; the
+*       diodes bound the oscillation and add the MS-20 scream.
+*
+* HARDWARE MAPPING
+*   OTAs   <- one LM13600 dual (X1, X2 — two halves, shared cutoff bias).
+*   Buffers<- the discrete JFET-input follower at X1's output, and the
+*             output buffer.
+*   Op-amp <- uA741 (X5) resonance gain stage.
+*   Diodes <- D8-D13, six 1N4148 (three anti-parallel pairs) across the
+*             resonance stage's feedback resistor.
+*   Caps   <- C4 = C5 = 2.2 nF (the two 1-pole section caps, schematic).
+* ==========================================================================
+
+* --- Cutoff / resonance controls ------------------------------------------
+* IABC : LM13600 bias current (A), shared by both OTA sections so the two
+*        1-pole corners track: fc = 3.01e7 * IABC. In hardware this is the
+*        cutoff CV through the expo converter.
+* RES_K: resonance pot 0..1; self-oscillation from ~0.9.
+.param IABC  = 33u      ; OTA bias current — corner ~1 kHz
+.param RES_K = 0.5      ; resonance pot (k2 ~= 2.2*RES_K, Q ~= 1.1 here)
+
+* --- Supplies — the MS-20 filter board's +/-12 V rails --------------------
+Vpos  vpos  0   DC  12
+Vneg  vneg  0   DC -12
+
+* --- Cutoff-CV bias-current nodes -----------------------------------------
+* Each OTA reads its `cv` node voltage directly as a bias current in amperes.
+Vcv1  cv1   0   DC {IABC}
+Vcv2  cv2   0   DC {IABC}
+
+* --- Input ----------------------------------------------------------------
+.param F = 220
+Vref vr 0 DC 2.5
+Gv  0 ramp vr 0 {F/12500}
+Cv  ramp 0 50n IC=0
+Sv  ramp 0 ramp 0 SW_SCH
+Av  ramp vco vco opamp_buf
+Rload vco 0 100k
+Rd1 vco d1 10k
+Rd2 d1 0 1k
+Cc  d1 ac 100n
+Rac ac 0 100k
+Vin  in ac 0
+
+* --- Section 1: OTA 1-pole lowpass — output `v2`, buffered `v2b` ----------
+R_in  in    s1in  10k               ; input attenuator (R19 / R20)
+R_ia  s1in  0     220
+R_f1  v2b   n1    10k               ; local feedback attenuator (R22)
+R_f1a n1    0     220
+O1    s1in  n1    cv1   v2    LM13600
+C1    v2    resamp  2.2n            ; C4, far end on the resonance feedback
+Abuf  v2    v2b   v2b   opamp_buf   ; the JFET follower: "not a Sallen-Key"
+
+* --- Section 2: OTA 1-pole lowpass — output `vo`, buffered `vob` ----------
+R_i2  v2b   s2in  10k
+R_i2a s2in  0     220
+R_f2  vob   n2    10k
+R_f2a n2    0     220
+O2    s2in  n2    cv2   vo    LM13600
+C2    vo    0     2.2n              ; C5
+Aout  vo    vob   vob   opamp_buf   ; output buffer — the lowpass output
+
+* --- Resonance loop: output -> pot -> gain + diode clamp -> C1 -------------
+R_res vob   rwiper  39k
+Rp_a  rwiper  rfb_in  {47k*(1-RES_K)+1}   ; VR1 pot: output end -> wiper
+Rp_b  rfb_in  0       {47k*RES_K+1}       ; VR1 pot: wiper -> ground
+* Non-inverting gain stage (X5 uA741): gain = 1 + R_rg/R_rf ~= 4.
+Ares  rfb_in  rgain   resamp  opamp_res
+R_rg  resamp  rgain   10k
+R_rf  rgain   0       3.3k
+* D8-D13 across R_rg: past ~3 diode drops the stage's gain collapses, which
+* bounds self-oscillation and gives the amplitude-dependent MS-20 scream.
+D_p1  resamp  dn1     D1N4148
+D_n1  dn1     resamp  D1N4148
+D_p2  dn1     dn2     D1N4148
+D_n2  dn2     dn1     D1N4148
+D_p3  dn2     rgain   D1N4148
+D_n3  rgain   dn2     D1N4148
+
+* --- LM13600 OTA model -----------------------------------------------------
+* circuit-runtime's OTA device: Iout = Iabc*tanh(Vin/2Vt) input
+* transconductance + exponential output rail-current starvation. The MS-20's
+* LM13600 is the same behavioural part as the CA3080 used elsewhere in the
+* corpus; run here on the +/-12 V MS-20 rails.
+.model LM13600 OTA (IS=1e-14 VT=0.02585 VPOS=12 VNEG=-12 VDROPPOS=1.5 VDROPNEG=1.5)
+
+* --- Op-amp models ---------------------------------------------------------
+* The inter-stage unity buffer and the uA741 resonance gain stage. 1-pole
+* macromodels with output rail-clip; `vsat=11` keeps them inside +/-12 V.
+.model opamp_buf OPAMP (aol=1e5 gbp=1e6 rin=1e12 rout=100 vsat=11)
+.model opamp_res OPAMP (aol=2e5 gbp=1e6 rin=1e12 rout=75  vsat=11)
+
+* --- 1N4148 small-signal silicon diode (resonance clamp) -------------------
+.model SW_SCH SW (Vt=2.5 Vh=2.0 Ron=10 Roff=10Meg)
+.model D1N4148 D (IS=2.52n N=1.752 RS=0.568)
+
+* --- circuit-runtime playback annotations ---------------------------------
+* `;@` lines are read by circuit-runtime's `--play` mode and ignored by
+* ngspice. `;@input` retunes the Vin SIN frequency from a MIDI note;
+* `;@output` is the lowpass node `vo`. The default params (corner ~1 kHz,
+* moderate resonance) play a 220 Hz note through the MS-20 lowpass.
+;@input  midi.note → freq(Vin)
+;@output vob
+
+* --- Analysis (ngspice) ----------------------------------------------------
+;@output vob
+
+.control
+tran 20u 50m UIC
+.endc
+
+
+* ---- Circuit Studio layout (ignored by SPICE) ----
+*@cs part Vin -4 0 0 0 pin=1
+*@cs part R_in 6 0 3 0 pin=1
+*@cs part R_ia 14 3 0 0 pin=1
+*@cs part R_f1 36 -10 1 0 pin=1
+*@cs part R_f1a 20 -7 0 0 pin=1
+*@cs part O1 30 -1 2 1 pin=1
+*@cs part C1 34 6 0 0 pin=1
+*@cs part Abuf 43 0 0 0 pin=1
+*@cs part R_i2 53 0 3 0 pin=1
+*@cs part R_i2a 58 3 0 0 pin=1
+*@cs part R_f2 73 -10 1 0 pin=1
+*@cs part R_f2a 56 -7 0 0 pin=1
+*@cs part O2 66 -1 2 1 pin=1
+*@cs part C2 73 5 0 0 pin=1
+*@cs part Aout 79 0 0 0 pin=1
+*@cs part R_res 82 14 1 0 pin=1
+*@cs part Rp_a 72 14 1 0 pin=1
+*@cs part Rp_b 66 17 0 0 pin=1
+*@cs part Ares 58 15 0 1 pin=1
+*@cs part R_rg 58 22 3 0 pin=1
+*@cs part R_rf 68 25 0 0 pin=1
+*@cs part D_p1 44 28 3 0 pin=1
+*@cs part D_n1 44 34 1 0 pin=1
+*@cs part D_p2 52 28 3 0 pin=1
+*@cs part D_n2 52 34 1 0 pin=1
+*@cs part D_p3 60 28 3 0 pin=1
+*@cs part D_n3 60 34 1 0 pin=1
+*@cs deco output 92 0 0 0 vob
+*@cs deco rail 30 -4 0 0 Vcv1
+*@cs deco rail 66 -4 0 0 Vcv2
+*@cs deco gnd 14 6 0 0
+*@cs deco gnd 20 -4 0 0
+*@cs deco gnd 58 6 0 0
+*@cs deco gnd 56 -4 0 0
+*@cs deco gnd 73 8 0 0
+*@cs deco gnd 72 20 0 0
+*@cs deco gnd 68 28 0 0
+*@cs wire 3,0 -1,0
+*@cs wire 75,14 79,14
+*@cs wire 56,0 58,0
+*@cs wire 62,0 58,0
+*@cs wire 69,14 66,14
+*@cs wire 62,14 66,14
+*@cs wire 70,-1 75,-1
+*@cs wire 73,2 73,-1
+*@cs wire 49,28 47,28
+*@cs wire 47,34 47,28
+*@cs wire 49,34 47,34
+*@cs wire 57,28 55,28
+*@cs wire 55,34 55,28
+*@cs wire 57,34 55,34
+*@cs wire 34,3 34,-1
+*@cs wire 39,-1 34,-1
+*@cs wire 9,0 14,0
+*@cs wire 26,0 14,0
+*@cs wire 33,-10 20,-10
+*@cs wire 26,-2 26,-10
+*@cs wire 50,0 47,0
+*@cs wire 39,1 39,4 47,4 47,0
+*@cs wire 39,-10 47,-10 47,0
+*@cs wire 70,-10 56,-10
+*@cs wire 62,-2 62,-10
+*@cs wire 68,22 61,22
+*@cs wire 63,28 63,22
+*@cs wire 62,16 62,22
+*@cs wire 63,34 63,28
+*@cs wire 89,0 83,0
+*@cs wire 75,1 75,3 83,3 83,0
+*@cs wire 76,-10 83,-10 83,0
+*@cs wire 85,14 85,0
+*@cs wire 41,34 41,28
+*@cs wire 55,22 41,22 41,28
+*@cs wire 54,15 54,22
+*@cs wire 34,9 41,9 41,22
+*@cs wire 66,20 72,20
+.end

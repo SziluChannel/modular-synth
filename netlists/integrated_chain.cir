@@ -1,0 +1,47 @@
+* Integrated Chain: Guitar -> VCF -> Output (rail-connected opamps)
+.include /home/szilu/Documents/synth/netlists/opamp.lib
+
+VCC VCC 0 DC 12
+VEE VEE 0 DC -12
+
+VIN IN 0 SIN(0 0.1 220)
+
+* Hi-Z input
+CIN IN N1 100n
+RHI N1 0 1MEG
+
+* Buffer
+Xbuf N1 NB NB VCC VEE OPAMP
+
+* Preamp gain ~10x
+Rg NB Nfb 10k
+Rf Nfb Npre 90k
+Xpre NB Nfb Npre VCC VEE OPAMP
+
+* VCF (simplified Sallen-Key, cutoff ~1.6kHz)
+R1 Npre NA 10k
+C1 NA 0 10n
+R2 NA NB2 10k
+C2 NB2 0 10n
+Xbuf2 NB2 FILT FILT VCC VEE OPAMP
+
+* Output
+Cdc FILT NO 10u
+Rdc NO 0 100k
+RV1 NO W 50k
+RV2 W 0 50k
+Xline W LINE LINE VCC VEE OPAMP
+Xhp W HPOUT HPOUT VCC VEE OPAMP
+RL HPOUT 0 32
+
+* Decoupling
+Cdec1 VCC 0 100n
+Cdec2 VEE 0 100n
+Cbulk1 VCC 0 10u
+Cbulk2 VEE 0 10u
+
+.control
+tran 20u 1 0 uic
+wrdata /tmp/integrated_chain.cir.csv time HPOUT
+.endc
+.end

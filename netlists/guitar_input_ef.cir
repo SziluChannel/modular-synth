@@ -1,0 +1,49 @@
+* Module 1: Guitar Input Interface & Envelope Follower
+* Supply: +/-12V
+
+VCC  VCC 0 DC 12
+VEE  VEE 0 DC -12
+
+* Input signal: 200mVpp guitar at 220Hz (test)
+VIN  IN 0 SIN(0 0.1 220)
+
+* Hi-Z input: 1M to ground, AC couple 100nF
+RIN  IN J1 100k
+* actually Hi-Z: input resistor to ground at node after coupling
+CIN  IN N1 100n
+RHI  N1 0 1MEG
+
+* Buffer stage (TL072 opamp A): non-inverting
+* Opamp model: simple ideal VCVS with high gain
+Ebuf N2 0 N1 0 1
+* (real: TL072, use ideal for sim)
+
+* Preamp variable gain 1-20x: non-inverting amp
+* Rg=10k, Rf pot 200k
+Rg   N2 Nfb 10k
+Rf   Nfb Nout 200k
+Epre Nout 0 N2 Nfb 1e5
+
+* Envelope follower: half-wave rectifier
+Drect Nout Nrect 1N4148
+Rrect Nrect 0 100k
+* smoothing cap with diode decay
+Cenv Nrect 0 1u
+* discharge resistor
+Rdecay Nrect 0 100k
+* buffer output
+Eenv ENV 0 Nrect 0 1
+
+* Decoupling
+Cdec1 VCC 0 100n
+Cdec2 VEE 0 100n
+
+.model 1N4148 D(Is=2.52n Rs=10 N=1.752 Cjo=4p M=0.4 tt=20n)
+
+.control
+.options reltol=1e-3 abstol=1e-9 vntol=1e-6 method=gear
+tran 10u 200m uic
+wrdata /tmp/guitar_input_ef.cir.csv time ENV
+print v(ENV)
+.endc
+.end

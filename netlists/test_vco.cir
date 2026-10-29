@@ -1,0 +1,16 @@
+* minimal VCO smoke test
+.param F = 220
+Vpos vpos 0 DC 12
+Vneg vneg 0 DC -12
+Vref vr 0 DC 2.5
+G1 0 ramp vr 0 {F/12500}
+C1 ramp 0 50n IC=0
+S1 ramp 0 ramp 0 SW_SCH
+A1 ramp out out opamp_buf
+.model SW_SCH SW (Vt=2.5 Vh=2.0 Ron=10 Roff=10Meg)
+.model opamp_buf OPAMP(aol=1e5 gbp=1e6 rin=1e12 rout=100 vsat=11)
+;@output out
+.control
+tran 5u 50m UIC
+.endc
+.end

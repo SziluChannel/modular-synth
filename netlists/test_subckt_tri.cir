@@ -1,0 +1,22 @@
+* subckt test: triangle VCO (R,C,A only) inside .subckt
+.param F  = 220
+.param Ci = 100n
+.param Ri = {2.5/(F*Ci)}
+.model opamp_buf OPAMP(aol=1e5 gbp=1e6 rin=1e12 rout=100 vsat=11)
+Vpos vpos 0 DC 12
+Vneg vneg 0 DC -12
+.subckt TRI_VCO out
+Rtri_i  sq  ni  {Ri}
+Ctri_i  out ni  {Ci} IC=0.2
+Atri_i  0   ni  out opamp_buf
+Rtri_s  out px  100k
+Rtri_fb sq  px  1MEG
+Atri_s  px  0   sq  opamp_buf
+Rtri_ld out 0   100k
+.ends
+XVCO tri TRI_VCO
+;@output tri
+.control
+tran 5u 50m UIC
+.endc
+.end

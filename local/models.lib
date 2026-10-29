@@ -1,0 +1,33 @@
+* =====================================================================
+*  Local ngspice equivalents of the Circuit Studio active devices.
+*
+*  Circuit Studio implements OTA / OPAMP natively.  ngspice does not
+*  (its 'O' card is a lossy line and XSPICE ships no opamp/ota model),
+*  so these are behavioural equivalents built from the parameters the
+*  netlists themselves declare:
+*
+*    O  p n cv out  <OTA model>   IS VT VPOS VNEG VDROPPOS VDROPNEG
+*         Iout = Iabc * tanh(Vd / (2*VT))      Iabc = V(cv)  [amps]
+*         (positive: sources current into `out` when V(p) > V(n);
+*          sim.py swaps the inputs for the opposite polarity)
+*
+*    A  inp inn out <OPAMP model> aol gbp rin rout vsat
+*         one pole at gbp/aol, hard limit at +/- vsat, output rout.
+*
+*  Validated against the published database netlists: see NOTES.md
+* =====================================================================
+
+.subckt OTA p n cv out
+Bgm  0 out I = V(cv) * tanh((V(p)-V(n))/0.0517)
+Rlk  out 0 1G
+.ends OTA
+
+.subckt OPA inp inn out params: aol=2e5 gbp=3e6 rout=75 vsat=13 pole=3e1
+Rin  inp inn 1e12
+Gd   0 n1 inp inn 1
+Rd   n1 0 {aol}
+Cd   n1 0 {1/(2*3.14159265358979*aol*pole)}
+Bl   o0 0 V = max(-{vsat}, min({vsat}, V(n1)))
+Rout o0 out {rout}
+Rlk  out 0 1G
+.ends OPA

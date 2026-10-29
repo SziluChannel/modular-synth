@@ -1,0 +1,160 @@
+* converted from full_synth.cir
+.include /home/szilu/Documents/synth/local/models.lib
+.options method=gear
+* =====================================================================
+*  FULL MODULAR SYNTH + GUITAR INTERFACE
+*
+*  Guitar in -> preamp -> envelope follower (filter cutoff CV)
+*  Three saw-core VCOs -> inverting mixer -> Polivoks-style SVF
+*  -> master -> line + headphone
+*
+*  The VCO core and the VCF are taken from the database module library
+*  (the "Dual VCO -> Polivoks" patch), the topology that is proven to
+*  run in realtime in the browser.  An earlier op-amp triangle core
+*  worked electrically but cost several times more in the runtime's
+*  solver, so it has been replaced.
+*
+*  Signal levels: each VCO is +/-0.375 V, the mixer sums them to
+*  +/-1.1 V, the filter output is scaled by 0.6.
+* =====================================================================
+* ---------------------------- KNOBS ---------------------------------
+.param VCO1_FREQ = 220
+.param VCO2_FREQ = 277.2
+.param VCO3_FREQ = 329.6
+.param VCF_IC    = 31u         ; VCR bias current -> cutoff
+.param VCF_RES   = 0.5         ; resonance 0..1
+.param VCF_DRIVE = 1           ; input drive 0.3..2
+.param VCF_CVAMT = 1           ; envelope -> cutoff depth
+.param EF1_GAIN  = 10
+.param MASTER    = 0.7
+* ---------------------------- MODELS --------------------------------
+.model SW_VCO   SW    (Vt=2.5 Vh=2.0 Ron=3k Roff=1e12)
+.model D_EXPO   D     (IS=1e-14 N=1 RS=0)
+.model D1N4148  D     (IS=2.52n N=1.752 RS=0.568)
+* =====================================================================
+*  VCO 1 - saw core with exponential converter and a soft reset switch
+*  Tune sets the frequency; the pitch input is 1 V/oct (0 V = C4).
+* =====================================================================
+.subckt VCO1 pitch out
+Vb   vo 0 DC {0.02585*ln(max(3.9984e-4*VCO1_FREQ, 1e-30)/1e-11)}
+Ep   vd1 vo pitch 0 0.0179176
+Eh   vd vd1 cv 0 0.0046468
+Dx   vd vs D_EXPO
+En   vn 0 0 vs 1e6
+Rf   vs vn 1k
+Ec   cv 0 0 vn 1
+G1   0 ramp cv 0 100u
+C1   ramp 0 10n
+S1   ramp 0 ramp 0 SW_VCO
+Vmid mid 0 DC 2.5
+E1   out 0 ramp mid 0.15
+.ends
+* =====================================================================
+*  VCO 2
+* =====================================================================
+.subckt VCO2 pitch out
+Vb   vo 0 DC {0.02585*ln(max(3.9984e-4*VCO2_FREQ, 1e-30)/1e-11)}
+Ep   vd1 vo pitch 0 0.0179176
+Eh   vd vd1 cv 0 0.0046468
+Dx   vd vs D_EXPO
+En   vn 0 0 vs 1e6
+Rf   vs vn 1k
+Ec   cv 0 0 vn 1
+G1   0 ramp cv 0 100u
+C1   ramp 0 10n
+S1   ramp 0 ramp 0 SW_VCO
+Vmid mid 0 DC 2.5
+E1   out 0 ramp mid 0.15
+.ends
+* =====================================================================
+*  VCO 3
+* =====================================================================
+.subckt VCO3 pitch out
+Vb   vo 0 DC {0.02585*ln(max(3.9984e-4*VCO3_FREQ, 1e-30)/1e-11)}
+Ep   vd1 vo pitch 0 0.0179176
+Eh   vd vd1 cv 0 0.0046468
+Dx   vd vs D_EXPO
+En   vn 0 0 vs 1e6
+Rf   vs vn 1k
+Ec   cv 0 0 vn 1
+G1   0 ramp cv 0 100u
+C1   ramp 0 10n
+S1   ramp 0 ramp 0 SW_VCO
+Vmid mid 0 DC 2.5
+E1   out 0 ramp mid 0.15
+.ends
+* =====================================================================
+*  VCF - Polivoks-style 2-pole SVF, OTA-based
+*  Section 1 integrates the highpass node, section 2 the bandpass,
+*  and resonance is a plain resistor (no diodes) so the loop stays
+*  linear and the solver stays cheap.  Q is set by R_q.
+*  The cutoff and resonance ports are CV inputs handled by the host.
+* =====================================================================
+.subckt POLIVOKSVCF in cutoff res pitch out
+R_in in sn {10k/VCF_DRIVE}
+R_lp lp sn 10k
+R_q  bp sn {6k+900k*VCF_RES*VCF_RES}
+R_f  sn hp 10k
+XAsum 0 sn hp OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+R1a hp i1 10k
+R1b i1 0 220
+XO1 i1 0 cv bpc OTA
+C1  bpc 0 2.2n
+XAb1 bpc bp bp OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+R2a bp i2 10k
+R2b i2 0 220
+XO2 i2 0 cv lpc OTA
+C2  lpc 0 2.2n
+XAb2 lpc lp lp OPA aol=200000 gbp=3e+06 rout=75 vsat=13 pole=15
+Vcv cv 0 DC {VCF_IC}
+Eout out 0 lp 0 0.6
+.ends
+* ---------------------------- SOURCES -------------------------------
+Vin   in   0 AC 1 0 SIN(0 0.2 220)
+Vp0   pitch 0 DC 0
+* =====================================================================
+*  GUITAR INPUT + ENVELOPE FOLLOWER
+* =====================================================================
+Cin  in   g1  100n
+Rhi  g1   0   1MEG
+Reg  gfb  0   10k
+Ref  gfb  gp  {10k*(EF1_GAIN-1)+1}
+XAp g1 gfb gp OPA aol=200000 gbp=3e+06 rout=75 vsat=11 pole=15
+Drec gp   dx  D1N4148
+Red  dx   env 1k
+Cen  env  0   1u
+Rdc  env  0   100k
+* =====================================================================
+*  OSCILLATORS + MIXER
+*  Inverting summer: each VCO at unity, the guitar padded by 22:1.
+* =====================================================================
+XVCO1 pitch osc1 VCO1
+XVCO2 pitch osc2 VCO2
+XVCO3 pitch osc3 VCO3
+Rm1 osc1 mixs 10k
+Rm2 osc2 mixs 10k
+Rm3 osc3 mixs 10k
+Rm4 gp   mixs 220k
+Rmf mixs mixout 10k
+XAm 0 mixs mixout OPA aol=200000 gbp=3e+06 rout=75 vsat=11 pole=15
+* =====================================================================
+*  FILTER  (envelope follower drives its cutoff port)
+* =====================================================================
+XVCF mixout env env pitch filt POLIVOKSVCF
+* =====================================================================
+*  OUTPUT  (DC block, master, line + headphone)
+* =====================================================================
+Cdc filt o1 1u
+Rout_dc o1 0 100k
+Ro1 o1 w  {50k*(1-MASTER)+1}
+Ro2 w  0  {50k*MASTER+1}
+XAln w line line OPA aol=200000 gbp=3e+06 rout=75 vsat=11 pole=15
+Rhp line hp 47
+Rh  hp  0  32
+* ---------------------------- CONTROLS / OUTPUTS ---------------------
+.ac dec 3 20 20000
+.control
+run
+wrdata /home/szilu/Documents/synth/local/work/ac_filt.txt vm(filt) vp(filt)
+.endc
+.end
